@@ -1,4 +1,4 @@
-##Arduino / Breadboard based EEPROM-Programmer and -reader
+# Arduino / Breadboard based EEPROM-Programmer and -reader
 
 This Arduino-Based EEPROM-Writer is inspired by the work of Ben Eater:
 https://www.youtube.com/watch?v=K88pgWhEb1M
