@@ -1,15 +1,22 @@
 # Protocoldescription
 
+## Possible commands:
+- 0x72 (r): read single address
+- 0x77 (w): write single address
+- 0x52 (R): read block (max 64 Bytes)
+- 0x57 (W): write block (max 64 Bytes)
+
 ## Read:
-### PC sends:
+#### Single address:
+##### Request from PC: 
 3 Bytes: [command (1-Byte)][Address (2-Bytes)]
-
-### Arduino answers
+##### Answer from Arduino
 [EEPROM-Value of address (1-Byte)]
-
-#### Possible commands:
-- 0x72 (r): read
-- 0x77 (w): write
+#### Whole block:
+##### Request from PC:
+4 Bytes: [command (1-Byte)][Baseddress (2-Bytes)][Blockcount (max. 256 => 0-255) (1-Byte)]
+##### Answer from Arduino
+[Array of bytes (max. 256 => 0-255) (size defined by request)]
 
 ## Write:
 ### PC sends:

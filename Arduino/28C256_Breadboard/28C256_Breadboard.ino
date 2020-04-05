@@ -22,18 +22,22 @@
 
 const unsigned int MAX_PAYLOAD = 63;
 const unsigned int DELAY_US = 10;
+bool writemode=false; // indicates the state of the I/O_pins
 
 void setup() {
   digitalWrite(WRITE_EN, HIGH); //Set Write-Enable to HIGH will disable Writing to the ROM by Default and avoid accidential writes to the EEPROM
   digitalWrite(SHIFT_CLK, LOW);  
   
   //Set the Pins 2 to 4 (SHIFT_ DATA/CLK/LATCH ) as Outputs
-  for (int pin=2;pin<=4;pin++){
+    for (int pin=2;pin<=4;pin++){
     pinMode(pin, OUTPUT);
-  }
-  Serial.begin(57600);
-  //delay(1000);
-  //testRead();
+  }  
+  Serial.begin(115200);
+  digitalWrite(WRITE_EN, HIGH); //Set Write-Enable to HIGH will disable Writing to the ROM by Default and avoid accidential writes to the EEPROM
+  /*
+  delay(1000);
+  testRead();
+  */
 }
 
 void testRead(){ //Can be used to test if reading data is working
@@ -70,11 +74,8 @@ void testRead(){ //Can be used to test if reading data is working
         bytegapcounter=0; //reset coutner
         }
       
-      }
-
-      
-     // sprintf(buf , "%s  %s", buf, ascii);
-      sprintf(buf , "%s\t", buf);
+      }     
+    sprintf(buf , "%s\t", buf);
     Serial.print(buf);
     for (int offset=0;offset <= (bs-1); offset +=1){
         Serial.write(data[offset] > 31 && data[offset] < 127 ? data[offset] : '.');
@@ -105,14 +106,46 @@ void testWrite(){ //Can be used to test if writing data is working
   }
 }
 
-byte readEEPROM(int address){
-  setAddress(address, SR_INV, true);
-  byte data = 0;
- for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
-    //Set all Data-Pins as INPUT
-    pinMode(pin, INPUT); 
+void readEEPROMbl(byte *buf /*pointer to an initialized buffer*/, int base /*baseaddress*/, int len /*bytecount to be read*/){ //Reads a whole block from the EEPROM and puts its data to buf
+  int maxbyte=255;  //The highest byte-index we can use
+  int i=0; //itaration counter
+  if (len >= 3 && len <=maxbyte){ // Must be 4 to 256 Bytes (Index: 3-255)
+      //Initialize our buffer with 0x00
+      for (i=0; i<len; i++){
+        //Fill the buffer with zeroes
+        buf[i] = '\x00';        
+        }
+
+      //Read data from EEPROM      
+      for (i=0; i<=len; i++){ //Iterate through all bytes that should be read...        
+        //buf[i] = len; //DEBUG        
+        buf[i] = readEEPROM(base + i);
+        }       
+
+      return; //everything fine up to here
+      }
+
+    //Some error occured and the requesting computer should be informed about this    
+    for (i=0; i<=maxbyte; i++){
+      //Fill the buffer with status code NOK
+      buf[i] = '\x6e';
+    }
+    return; //something went wrong    
+  }
+
+byte readEEPROM(int address){  
+  // This reduce the time to switch the data-pins between INPUT and OUTPUT
+  if (writemode) { //We are in write mode at the moment and should set the data-pins as input      
+     for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
+        //Set all Data-Pins as INPUT
+        pinMode(pin, INPUT); 
+        }
+     writemode=false;   
     }
   
+  setAddress(address, SR_INV, true); //Set-address
+  byte data = 0;
+    
   for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin-=1) {
     //Read all bits at the given address
     data = (data << 1)+digitalRead(pin);
@@ -156,11 +189,16 @@ void writeEEPROMBlock(int address, byte *data, int len){ //Writes a data-block (
 void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
   digitalWrite(WRITE_EN, HIGH);
   setAddress(address, SR_INV, /*Output enable*/ false); //Set the address where we want to write.
-  
-  for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
-    //Set all Data-Pins as Output
-    pinMode(pin, OUTPUT); 
+
+    // This reduces the time to switch the data-pins between INPUT and OUTPUT
+   if (!writemode) { //We are in read mode at the moment and should set the data-pins as output      
+     for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
+        //Set all Data-Pins as Output
+        pinMode(pin, OUTPUT); 
+        }
+     writemode=true;   
     }
+  
   
   for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
     digitalWrite(pin, data & 1); //Writing out the right-most bit from our data-byte
@@ -180,13 +218,12 @@ void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
      * Results in
      * 00000001    
     */
-    //As we just got the least significant bit, we need to shift our data-byte right to get the next byte in the next round
+    //As we just got the least significant bit, we need to shift our data-byte right to get the next bit of this byte in the next round
     data = data >> 1; 
     }
     
     //All data Pins are set. We need to trigger Write enable to write our data to the EEPROM
-    digitalWrite(WRITE_EN, LOW);
-    //delay(50); //DEBUG
+    digitalWrite(WRITE_EN, LOW);    
     delayMicroseconds(DELAY_US); //ROM-Datasheet says minimum Write-Pulse-Width = 100 µs but nothing about maximum. 1 Microsecond is the fastest arduino can do.
     digitalWrite(WRITE_EN, HIGH);
     delay(10); //Give the ROM some time to stabilize
@@ -276,14 +313,29 @@ void receive(){
   byte buf[64];  
   uint8_t pos = 0;  
   int bytesavail=Serial.readBytes(buf, 64); //Reads a maximum of 64 Bytes into buffer and return the bytecount that was read
-  if (bytesavail == 3 && buf[0] == '\x72' /*Should read data*/ ){
-    //[command (1-Byte)][Address (2-Bytes)]     
-    
+  if (bytesavail == 3 && buf[0] == '\x72'){
+     /*Should read a single address
+     *[command (1-Byte)][Address (2-Bytes)]     
+     *
+     */    
     //convert addressbytes to an integer:
     int addr = (buf[1]<<8)+buf[2];
     byte value = readEEPROM(addr); //Reads the EEPROM-value
-    buf[0] = value;
-    send(buf, 1); //returns the value that has just been read      
+    buf[0] = value; //Put the value that hast been read to the serial buffer
+    send(buf, 1); //send the value that has just been read      
+  }
+  else if (bytesavail == 4 && buf[0] == '\x52') {
+    /*  Should read a block
+     *[command (1-Byte)][Baseaddress (2-Bytes)][Blockcount (0 - 255) (1-Byte)]
+     *
+     */    
+    //convert addressbytes to an integer:    
+    int baseaddr = (buf[1]<<8)+buf[2];
+    int index = buf[3]; // Get the highest index-value
+    int count = index + 1; //index gives the highest index. e.g 255, which means we ne a byte-array that can hold 256 Bytes. therefore increment by one
+    byte databuf[count]; // declare a byte-array with the size from the serial-line. as the byte's index starts with zero we need 1 more field
+    readEEPROMbl(databuf, baseaddr, index); //Reads the EEPROM-value and put the value into databuf
+    send(databuf, count); //send the value that has just been read          
   }
   
   
