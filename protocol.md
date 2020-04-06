@@ -6,6 +6,11 @@
 - 0x52 (R): read block (max 64 Bytes)
 - 0x57 (W): write block (max 64 Bytes)
 
+#### Possible returncodes:
+- 0x6F (o): OK
+- 0x6E (n): not OK
+- 0x75 (u): unknown command
+
 ## Read:
 #### Single address:
 ##### Request from PC: 
@@ -19,12 +24,14 @@
 [Array of bytes (max. 256 => 0-255) (size defined by request)]
 
 ## Write:
-### PC sends:
+#### Single Address:
+##### Reques from PC
 4 Bytes: [command (1-Byte)][Address (2-Bytes)][Value (1-Byte)]
+### Answer from Arduino
 
-### Arduino answers
+#### Whole Block:
+##### Request from PC:
+4-66 Bytes: [command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 63 Bytes)]
+##### Answer from Arduino
 [Return code (1-Byte)]
 
-#### Possible returncodes:
-- 0x6F (o): OK
-- 0x6E (n): not OK

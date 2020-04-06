@@ -35,6 +35,46 @@ def printProgressBar (iteration, total, prefix='', suffix='', decimals=1, length
     if iteration == total:
         print()
 
+def writeAddr(address, data):
+    """ Writes a value to the EEPROM at a specific address """
+    print("Writing \"" + str(data) + "\" to address \"" + str(address) + "\"")
+    maxretries = 10
+    retry = 0
+    receive = b''
+    # Write a specific address => [command (1-Byte)][Address (2-Bytes)][Value (1-Byte)]
+    # msg = b'\x77' + int.to_bytes(address, 2, 'big', signed=False) + data
+    msg = b'\x77' + address + data
+    ser.write(msg)
+    while not receive == b'\x6F':  # Retry as long as the answer is not 0x6F indicating OK
+        receive = ser.read(1)  # We await one byte here
+        if retry == maxretries:
+            break  # Max retries exceeded. Abort
+        else:
+            retry += 1
+    return bytes(receive)
+
+def writeBlock(baseaddress, data):
+    """ Writes a block of max. 63 Bytes to the EEPROM """
+    print("Writing \"" + str(data) + "\" to EEPROM starting at address \"" + str(baseaddress) + "\"")  # DEBUG
+    bytestosend = len(data)
+    if bytestosend <= 63:
+        maxretries = 10
+        retry = 0
+        receive = b''
+        # Write a block => [command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 63 Bytes)]
+        msg = b'\x57' + baseaddress + data
+        ser.write(msg)
+        #while not receive == b'\x6F':  # Retry as long as the answer is not 0x6F indicating OK
+        while receive == b'':  # Retry as long as the answer is not 0x6F indicating OK
+            receive = ser.read(68)  # DEBUG
+            #receive = ser.read(1)  # We await one byte here
+            if retry == maxretries:
+                break  # Max retries exceeded. Abort
+            else:
+                retry += 1
+        return bytes(receive)
+    return b'\x6E'  # Error
+
 
 def readAddress(address):
     """ Reads a specific address from the EEPROM """
@@ -43,7 +83,7 @@ def readAddress(address):
     ser.write(b'\x72' + address)  # Read a specific address => [command (1-Byte)][Address (2-Bytes)]
     # receive = ser.read(bufsize)
     receive = b''
-    while receive == b'':  # Retry as long as bytes have been received..
+    while receive == b'':  # Retry as long as no bytes have been received..
         receive = ser.read(1)  # We await one byte here
         if retry == maxretries:
             break  # Max retries exceeded. Abort
@@ -70,6 +110,14 @@ def readBlock(baseaddress, count):
     return b'\x6E'  # NOK
 
 
+def flashImage(file):
+    """ Will flash a ROM-File to the EEPROM """
+    if not os.path.exists(file):
+        print("File \"" + file + "\" not found. Aborting!")
+        return
+    highestbyte = os.path.getsize(file)  # The the file's size in bytes
+    blocksize = 63
+
 def dumpEEPROM(highestbyte, file, deleteExisting=False):
     """ dumps the contents of the rom to a file"""
     """ everything here starts with index 0 """
@@ -84,7 +132,6 @@ def dumpEEPROM(highestbyte, file, deleteExisting=False):
     bytesread = 0  # Bytes that already had been read
     if highestbyte < initial_blocksize:  # blocksize must not be smaller than sizetoread
         current_blocksize = remainingbytes  # adjust blocksize to the number of bytes that should be read
-
     # iter = 0
     # Dumping data:
     print("Dumping Bytes 0 to " + str(highestbyte) + " from EEPROM to \"" + file + "\"")
@@ -103,9 +150,7 @@ def dumpEEPROM(highestbyte, file, deleteExisting=False):
             # DEBUG END
             """
             ba = int.to_bytes(current_baseaddress, 2, 'big', signed=False)  # Convert the base address to a byte value
-
             current_datablock = readBlock(ba, current_blocksize)  # Read a block of data bytes from thee EEPROM
-
             bytesreceived = len(current_datablock)  # Determine how many bytes had been received via serial
             """
             # DEBUG
@@ -121,19 +166,15 @@ def dumpEEPROM(highestbyte, file, deleteExisting=False):
                 # as blocksize indicate the highest address (index starts at zero) and remainingbytes tells use the
                 # remaining bytes (index starts a 1) we have to decrement 1
                 current_blocksize = remainingbytes - 1
-
             # iterate base address to the next unread address
             current_baseaddress += bytesreceived
-
             """
             # DEBUG
             print("Next base address: " + str(current_baseaddress))
             #DEBUG END
             """
-
             # Update Progress Bar
             printProgressBar(bytesread, highestbyte, prefix='Progress:', suffix='Complete', length=50)
-
             # Check if the date in the current block is fine...
             # ... Arduino will answer with an array of all 0x6e in case of an error
             allerr = False
@@ -155,23 +196,45 @@ def dumpEEPROM(highestbyte, file, deleteExisting=False):
 
 # Main:
 print("EEPROMTOOL")
-with serial.Serial(sport, baudrate=baud, timeout=t_o) as ser:
-    time.sleep(2)  # Wait a few seconds to intialize
-    if ser.isOpen():
-        print("Port \"" + ser.name + "\" opened.")
-        while True:
+try:
+    with serial.Serial(sport, baudrate=baud, timeout=t_o) as ser:
+        time.sleep(2)  # Wait a few seconds to intialize
+        if ser.isOpen():
+            print("Port \"" + ser.name + "\" opened.")
+            while True:
+                """
+                value = readAddress(b'\x0f\x43')  # test
+                # value = readBlock(b'\x0f\x40', 5)  # test
+                print(value)
+                dumpEEPROM(32767, "./28C256_dump.bin")
+                time.sleep(1)
+                """
+                break
+            # dumpEEPROM(MAX_ROMADDR, "../28C256_dump.bin", True)
+            # writeAddr(b'\x00\x00', b'\x00')
+
+            print("0x00: " + str(readAddress(b'\x00\x00')))
+            print("0x01: " + str(readAddress(b'\x00\x01')))
+            print("0x02: " + str(readAddress(b'\x00\x02')))
+            print("0x03: " + str(readAddress(b'\x00\x03')))
+            print("0x04: " + str(readAddress(b'\x00\x04')))
+            print("0x05: " + str(readAddress(b'\x00\x05')))
+
+            #writeBlock(b'\x00\x00', b'\xaa\xbb\xcc\xdd\xee\xff')
             """
-            value = readAddress(b'\x0f\x43')  # test
-            # value = readBlock(b'\x0f\x40', 5)  # test
-            print(value)
-            dumpEEPROM(32767, "./28C256_dump.bin")
-            time.sleep(1)
+            print("0x00: " + str(readAddress(b'\x00\x00')))
+            print("0x01: " + str(readAddress(b'\x00\x01')))
+            print("0x02: " + str(readAddress(b'\x00\x02')))
             """
-            break
-        dumpEEPROM(MAX_ROMADDR, "../28C256_dump.bin", True)
-        ser.close()
-        if not ser.isOpen:
-            print("Port \"" + ser.name + "\" Closed.")
+            dumpEEPROM(63, "../28C256_good.bin", True)
+            ser.close()
+            if not ser.isOpen:
+                print("Port \"" + ser.name + "\" Closed.")
+                exit(0)
+except serial.SerialException as e:
+    print("An error with the serial interface happened. => " + str(e))
+    print("Aborting!")
+    exit(1)
 
 
 

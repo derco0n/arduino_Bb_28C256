@@ -34,10 +34,15 @@ void setup() {
   }  
   Serial.begin(115200);
   digitalWrite(WRITE_EN, HIGH); //Set Write-Enable to HIGH will disable Writing to the ROM by Default and avoid accidential writes to the EEPROM
+
   /*
+  delay(1000);
+  byte test[6]={0x60, 0x61, 0x66, 0x63, 0x64, 0x65};
+  writeEEPROMBlock(0x04, test, 6);
   delay(1000);
   testRead();
   */
+
 }
 
 void testRead(){ //Can be used to test if reading data is working
@@ -48,7 +53,7 @@ void testRead(){ //Can be used to test if reading data is working
   int maxrom=MAX_ROMADDR;  
   
   //DEBUG
-  maxrom=4096;
+  maxrom=256;
   char buf[200];
   sprintf(buf, "Iterating from 0 to %d", maxrom);
   Serial.println(buf);
@@ -154,43 +159,12 @@ byte readEEPROM(int address){
 }
 
 
-void writeEEPROMBlock(int address, byte *data, int len){ //Writes a data-block (max 63 Bytes) to the EEPROM
+bool writeEEPROMBlock(int address, byte *data, int len){
     digitalWrite(WRITE_EN, HIGH);
-    Serial.println("Writing Block");
-    
-  for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
-    //Set all Data-Pins as Output
-    pinMode(pin, OUTPUT); 
-    }
 
-  setAddress(address, SR_INV, /*Output enable*/ false); //Set the address where we want to write.
-
-  int maxaddr=address+len;
-  int counter=0;
-
-  while (address < maxaddr) {
-    for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
-        digitalWrite(pin, data[counter] & 1); //Writing out the right-most bit from our data-byte    
-        data[counter] = data[counter] >> 1; 
-        }
-      delayMicroseconds(DELAY_US);
-      
-      //All data Pins are set. We need to trigger Write enable to write our data to the EEPROM
-      digitalWrite(WRITE_EN, LOW);    
-      delayMicroseconds(DELAY_US); 
-      digitalWrite(WRITE_EN, HIGH);
-      
-      delayMicroseconds(DELAY_US); 
-      address++;
-      counter++;
-    }
-  }
-
-void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
-  digitalWrite(WRITE_EN, HIGH);
-  setAddress(address, SR_INV, /*Output enable*/ false); //Set the address where we want to write.
-
-    // This reduces the time to switch the data-pins between INPUT and OUTPUT
+   /*
+    * writeEEPROM will do this for us.
+  // This reduces the time to switch the data-pins between INPUT and OUTPUT
    if (!writemode) { //We are in read mode at the moment and should set the data-pins as output      
      for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
         //Set all Data-Pins as Output
@@ -198,7 +172,47 @@ void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
         }
      writemode=true;   
     }
+    */    
+
+    int maxaddr=address+len;
+    int counter=0;
   
+    while (address < maxaddr) {
+      writeEEPROM(address, data[counter]);
+      /*
+      setAddress(address, SR_INV, false); //Set the address where we want to write.
+      for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
+          digitalWrite(pin, data[counter] & 1); //Writing out the right-most bit from our data-byte    
+          data[counter] = data[counter] >> 1; 
+          }
+        delayMicroseconds(DELAY_US);
+        
+        //All data Pins are set. We need to trigger Write enable to write our data to the EEPROM
+        digitalWrite(WRITE_EN, LOW);    
+        delayMicroseconds(DELAY_US); 
+        digitalWrite(WRITE_EN, HIGH);
+        delay(10);
+        //delayMicroseconds(DELAY_US); 
+     */
+        address++;
+        counter++;
+      }
+  return true;
+  }
+
+void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
+  digitalWrite(WRITE_EN, HIGH);
+
+  // This reduces the time to switch the data-pins between INPUT and OUTPUT
+   if (!writemode) { //We are in read mode at the moment and should set the data-pins as output      
+     for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
+        //Set all Data-Pins as Output
+        pinMode(pin, OUTPUT); 
+        }
+     writemode=true;   
+    }
+    
+  setAddress(address, SR_INV, /*Output enable*/ false); //Set the address where we want to write.
   
   for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
     digitalWrite(pin, data & 1); //Writing out the right-most bit from our data-byte
@@ -310,24 +324,24 @@ void clockLatch(){ //Makes one clock-pulse to Latch
 //int incomingByte = 0; // Für eingehende serielle Daten
 
 void receive(){
-  byte buf[64];  
-  uint8_t pos = 0;  
-  int bytesavail=Serial.readBytes(buf, 64); //Reads a maximum of 64 Bytes into buffer and return the bytecount that was read
-  if (bytesavail == 3 && buf[0] == '\x72'){
+  byte buf[68];  
+  //uint8_t pos = 0;  
+  int bytesavail=Serial.readBytes(buf, 68); //Reads a maximum of 64 Bytes into buffer and return the bytecount that was read
+  // Command-cases:
+  if (bytesavail == 3 && buf[0] == '\x72' /*r*/ ){
      /*Should read a single address
-     *[command (1-Byte)][Address (2-Bytes)]     
-     *
+     *[command (1-Byte)][Address (2-Bytes)]
      */    
     //convert addressbytes to an integer:
     int addr = (buf[1]<<8)+buf[2];
     byte value = readEEPROM(addr); //Reads the EEPROM-value
     buf[0] = value; //Put the value that hast been read to the serial buffer
     send(buf, 1); //send the value that has just been read      
+    return;
   }
-  else if (bytesavail == 4 && buf[0] == '\x52') {
+  else if (bytesavail == 4 && buf[0] == '\x52' /*R*/ ) {
     /*  Should read a block
      *[command (1-Byte)][Baseaddress (2-Bytes)][Blockcount (0 - 255) (1-Byte)]
-     *
      */    
     //convert addressbytes to an integer:    
     int baseaddr = (buf[1]<<8)+buf[2];
@@ -336,18 +350,66 @@ void receive(){
     byte databuf[count]; // declare a byte-array with the size from the serial-line. as the byte's index starts with zero we need 1 more field
     readEEPROMbl(databuf, baseaddr, index); //Reads the EEPROM-value and put the value into databuf
     send(databuf, count); //send the value that has just been read          
+    return;
   }
-  
-  
-  return;
-  }
+  else if (bytesavail == 4 && buf[0] == '\x77' /*w*/) {
+     /*  Should write a single address
+     *[command (1-Byte)][Address (2-Bytes)][Value (1-Byte)]
+     */  
+     //convert addressbytes to an integer:
+     int addr = (buf[1]<<8)+buf[2]; 
+     writeEEPROM(addr, buf[3]);  //Write data back
+     buf[0] = '\x6F'; //Send OK back
+     send(buf, 1); //send the value...
+     return;
+    }  
+  else if (buf[0] == '\x57' && bytesavail >= 4) // 'W'
+    {
+    /*  Should write a block
+     *[command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 63 Bytes)]
+     */
+     //convert addressbytes to an integer:    
+    int baseaddr = (buf[1]<<8)+buf[2];
+    int bytestowrite = bytesavail - 4; //All bytes available - command and baseaddress
+
+    int count = bytestowrite + 1;
+    byte databuf[count];
+    
+    int i=0;
+    int j=3;
+    for (i=0; i<=bytestowrite;i++){      
+      databuf[i] = buf[j];      
+      j++;
+      }
+   //send(databuf, i); //DEBUG.
+   if (writeEEPROMBlock(baseaddr, databuf, bytestowrite)){  //Write block and return ok if everything is fine
+      buf[0] = '\x6F'; //Send OK back      
+      }
+   else {
+      buf[0] = '\x6E'; //Send NOK back 
+      }
+   
+    send(buf, 1); //send the value...
+    //send(buf, bytestowrite); //DEBUG.
+    return;
+    }      
+  else if(bytesavail >= 1) 
+    {
+      // Unhandled command or invalid message
+      buf[0] = '\x75' ; //indicate unknown command Error 'u'
+      send(buf, 1); //Send
+      return;
+    }
+//This part will always be executed, even if there is not data available on the serial
+
+return;
+} 
 
 void send(byte *sendbuf, int len){
   Serial.write(sendbuf, len);
   return;  
-}
+  }
 
 void loop() {
   receive();
-
-}
+  }
