@@ -51,14 +51,15 @@ void testRead(){ //Can be used to test if reading data is working
   Serial.println("##############");
   int bs=BLOCK_SIZE;
   int maxrom=MAX_ROMADDR;  
-  
+
+  /*
   //DEBUG
   maxrom=256;
   char buf[200];
   sprintf(buf, "Iterating from 0 to %d", maxrom);
   Serial.println(buf);
   //DEBUG END
-  
+  */
   for (int base = 0; base < (maxrom-bs); base += bs) { //Fetch a bunch of bytes per line
     
     byte data[bs];

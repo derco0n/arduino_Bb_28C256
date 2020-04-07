@@ -55,7 +55,7 @@ def writeAddr(address, data):
 
 def writeBlock(baseaddress, data):
     """ Writes a block of max. 63 Bytes to the EEPROM """
-    print("Writing \"" + str(data) + "\" to EEPROM starting at address \"" + str(baseaddress) + "\"")  # DEBUG
+    # print("Writing \"" + str(data) + "\" to EEPROM starting at address \"" + str(baseaddress) + "\"")  # DEBUG
     bytestosend = len(data)
     if bytestosend <= 63:
         maxretries = 10
@@ -64,10 +64,10 @@ def writeBlock(baseaddress, data):
         # Write a block => [command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 63 Bytes)]
         msg = b'\x57' + baseaddress + data
         ser.write(msg)
-        #while not receive == b'\x6F':  # Retry as long as the answer is not 0x6F indicating OK
-        while receive == b'':  # Retry as long as the answer is not 0x6F indicating OK
-            receive = ser.read(68)  # DEBUG
-            #receive = ser.read(1)  # We await one byte here
+        while not receive == b'\x6F':  # Retry as long as the answer is not 0x6F indicating OK
+        #while receive == b'':  # Retry as long as the answer is not 0x6F indicating OK
+            #receive = ser.read(68)  # DEBUG
+            receive = ser.read(1)  # We await one byte here
             if retry == maxretries:
                 break  # Max retries exceeded. Abort
             else:
@@ -116,7 +116,39 @@ def flashImage(file):
         print("File \"" + file + "\" not found. Aborting!")
         return
     highestbyte = os.path.getsize(file)  # The the file's size in bytes
-    blocksize = 63
+    blocksize = 63  # How many Bytes should be written in one batch
+    current_baseaddress = 0  # the address from which we start
+    remainingbytes = highestbyte - current_baseaddress  # the bytes left to write
+    byteswritten = 0  # the bytes written so far
+    if highestbyte < blocksize:  # blocksize must not be smaller than count of bytes to be written
+        blocksize = remainingbytes  # adjust blocksize to match remainingbytes
+    print("Writing Bytes 0 to " + str(highestbyte) + " from \"" + file + "\" to EEPROM.")
+    with open(file, 'rb') as infile:  # Open file in read-binary-mode
+        printProgressBar(byteswritten, highestbyte, prefix='Progress:', suffix='Complete', length=50)
+        while remainingbytes > 0:
+            ba = int.to_bytes(current_baseaddress, 2, 'big', signed=False)  # Convert the base address to a byte value
+            data = infile.read(blocksize)  # read data from file
+
+            if not writeBlock(ba, data) == b'\x6F':  # write a block of data bytes to the EEPROM
+                print("Error while writing data. Aborting!")  # abort if not 0x6F (OK) returned
+                break
+
+            bytessent = blocksize
+            byteswritten += bytessent  # increment bytessent by blocksize
+            remainingbytes = highestbyte - byteswritten  # Bytes that are left to write
+            if remainingbytes < blocksize:  # If there is not a whole block left ...
+                # ...adjust blocksize to match remainingbytes
+                # as blocksize indicate the highest address (index starts at zero) and remainingbytes tells use the
+                # remaining bytes (index starts a 1) we have to decrement 1
+                current_blocksize = remainingbytes - 1  # really -1?
+            # iterate base address to the next unread address
+            current_baseaddress += bytessent
+            # Update Progress Bar
+            printProgressBar(byteswritten, highestbyte, prefix='Progress:', suffix='Complete', length=50)
+            time.sleep(0.1)
+    infile.close()
+    print("\r\nWriting \"" + file + "\" to EEPROM ended.")
+
 
 def dumpEEPROM(highestbyte, file, deleteExisting=False):
     """ dumps the contents of the rom to a file"""
@@ -213,20 +245,10 @@ try:
             # dumpEEPROM(MAX_ROMADDR, "../28C256_dump.bin", True)
             # writeAddr(b'\x00\x00', b'\x00')
 
-            print("0x00: " + str(readAddress(b'\x00\x00')))
-            print("0x01: " + str(readAddress(b'\x00\x01')))
-            print("0x02: " + str(readAddress(b'\x00\x02')))
-            print("0x03: " + str(readAddress(b'\x00\x03')))
-            print("0x04: " + str(readAddress(b'\x00\x04')))
-            print("0x05: " + str(readAddress(b'\x00\x05')))
-
             #writeBlock(b'\x00\x00', b'\xaa\xbb\xcc\xdd\xee\xff')
-            """
-            print("0x00: " + str(readAddress(b'\x00\x00')))
-            print("0x01: " + str(readAddress(b'\x00\x01')))
-            print("0x02: " + str(readAddress(b'\x00\x02')))
-            """
-            dumpEEPROM(63, "../28C256_good.bin", True)
+
+            flashImage("../28C256_test.bin")
+            dumpEEPROM(6400, "../28C256_test2.bin", True)
             ser.close()
             if not ser.isOpen:
                 print("Port \"" + ser.name + "\" Closed.")
