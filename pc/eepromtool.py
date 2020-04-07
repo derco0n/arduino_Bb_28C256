@@ -5,6 +5,8 @@
 import serial
 import time
 import os
+import argparse
+import sys
 
 sport = "/dev/ttyUSB0"
 baud = 115200
@@ -35,6 +37,7 @@ def printProgressBar (iteration, total, prefix='', suffix='', decimals=1, length
     if iteration == total:
         print()
 
+
 def writeAddr(address, data):
     """ Writes a value to the EEPROM at a specific address """
     print("Writing \"" + str(data) + "\" to address \"" + str(address) + "\"")
@@ -52,6 +55,7 @@ def writeAddr(address, data):
         else:
             retry += 1
     return bytes(receive)
+
 
 def writeBlock(baseaddress, data):
     """ Writes a block of max. 63 Bytes to the EEPROM """
@@ -226,8 +230,74 @@ def dumpEEPROM(highestbyte, file, deleteExisting=False):
     print("\r\nDumping to \"" + file + "\" ended.")
 
 
+def generateImage(pattern, times, file):
+    """ Writes a given pattern to specific imagefile x times"""
+    counter = 0
+    print("Writing pattern \"" + str(pattern) + "\" " + str(times) + " times to \"" + file + "\"")
+    with open(file, 'wb') as outfile:  # Open file in binary-write-mode
+        while counter <= times:
+            outfile.write(pattern)
+            printProgressBar(counter, times, prefix='Progress:', suffix='Complete', length=50)
+            counter += 1
+    outfile.close()
+
+
 # Main:
-print("EEPROMTOOL")
+print("EEPROM-Tool by derco0n. Version: 0.1 - 20200407")
+print("###############################################")
+print("")
+
+parser = argparse.ArgumentParser(
+    description="""EEPROM-Tool is a utility to read and write 28C256 EEPROM 
+    using a breadboard mounted Arduino and some shift registers. """)
+parser.add_argument('-d', '--dump', help="Dump EEPROMs contents to a file")
+parser.add_argument('-f', '--file', help="Full/path/to/file to read from / write to", required=True)
+parser.add_argument('-w', '--write', help="Write a ROM-Image to the EEPROM")
+parser.add_argument('-g', '--generate', help="generate an image file with a specific pattern")
+parser.add_argument('-p', '--pattern', help="the pattern that should be written to file")
+parser.add_argument('-t', '--times', help="how often should the pattern be written to a file")
+
+args = parser.parse_args()
+if len(sys.argv) == 1:
+    parser.print_help()
+    exit(7)
+if args.dump is not None:
+    # Should dump a file
+    if args.file is None:
+        print("Please specify a file to which you want to write.")
+        parser.print_help()
+        exit(1)
+    # TODO: Dump contents to file specified
+    exit(10)  # DEBUG
+elif args.write is not None:
+    # Should write a file to the ROM
+    if args.file is None:
+        print("Please specify a file that should be written to the EEPROM.")
+        parser.print_help()
+        exit(2)
+    # TODO: Write contents from file specified
+    exit(10)  # DEBUG
+elif args.generate is not None:
+    # Should generate a pattern in a file
+    if args.pattern is None:
+        print("Please specify a pattern.")
+        parser.print_help()
+        exit(3)
+    if args.times is None:
+        print("Please specify how often the pattern should be written.")
+        parser.print_help()
+        exit(4)
+    if args.file is None:
+        print("Please specify a file to which you want to write.")
+        parser.print_help()
+        exit(5)
+    # generate Pattern here
+    generateImage(bytes(args.pattern), int(args.times), args.file)
+# No options specified
+print("Wrong usage")
+parser.print_help()
+exit(6)
+
 try:
     with serial.Serial(sport, baudrate=baud, timeout=t_o) as ser:
         time.sleep(2)  # Wait a few seconds to intialize
@@ -247,8 +317,13 @@ try:
 
             #writeBlock(b'\x00\x00', b'\xaa\xbb\xcc\xdd\xee\xff')
 
-            flashImage("../28C256_test.bin")
-            dumpEEPROM(6400, "../28C256_test2.bin", True)
+            #flashImage("../28C256_test.bin")
+            #dumpEEPROM(6400, "../28C256_test2.bin", True)
+
+            #generateImage(b'\xea', MAX_ROMADDR, "../32K_6502_NOP.bin" )
+            #generateImage(b'\xff', MAX_ROMADDR, "../ROMS/32K_FF.bin")
+            #generateImage(b'\x00', MAX_ROMADDR, "../ROMS/32K_00.bin")
+
             ser.close()
             if not ser.isOpen:
                 print("Port \"" + ser.name + "\" Closed.")
@@ -257,18 +332,3 @@ except serial.SerialException as e:
     print("An error with the serial interface happened. => " + str(e))
     print("Aborting!")
     exit(1)
-
-
-
-
-"""
-TEST- EEPROM'S contents
-...
-0x0f00:	 4e 6f 6e 65 2e 2e 00 00   63 01 8d 5d c9 e0 8d 1e  
-0x0f10:  e5 40 13 00 00 00 00 00   00 00 00 00 00 00 00 00 
-0x0f20:	 00 00 00 00 00 00 00 00   00 00 00 00 00 00 00 00   
-0x0f30:  00 00 00 00 00 00 00 00   00 00 00 00 00 00 00 00
-0x0f40:	 32 00 ca 85 ab 82 db 83   f3 81 d5 84 f7 81 f8 83
-0x0f50:  cb 81 8c 85 e3 81 18 84   ca 01 9f 86 db 01 bd 87
-...
-"""
