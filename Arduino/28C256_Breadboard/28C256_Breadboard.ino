@@ -212,7 +212,7 @@ void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
      writemode=true;   
     }
     
-  setAddress(address, SR_INV, /*Output enable*/ false); //Set the address where we want to write.
+  setAddress(address, SR_INV, /*Output enable*/ false); //Set the address to where we want to write.
   
   for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
     digitalWrite(pin, data & 1); //Writing out the right-most bit from our data-byte
@@ -363,7 +363,7 @@ void receive(){
      send(buf, 1); //send the value...
      return;
     }  
-  else if (buf[0] == '\x57' && bytesavail >= 4) // 'W'
+  else if (buf[0] == '\x57' && bytesavail >= 4 && bytesavail <= 258) // 'W'
     {
     /*  Should write a block
      *[command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 63 Bytes)]

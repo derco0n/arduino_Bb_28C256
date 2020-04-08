@@ -61,7 +61,7 @@ def writeBlock(baseaddress, data):
     """ Writes a block of max. 63 Bytes to the EEPROM """
     # print("Writing \"" + str(data) + "\" to EEPROM starting at address \"" + str(baseaddress) + "\"")  # DEBUG
     bytestosend = len(data)
-    if bytestosend <= 63:
+    if bytestosend <= 255:
         maxretries = 10
         retry = 0
         receive = b''
@@ -120,7 +120,7 @@ def flashImage(file):
         print("File \"" + file + "\" not found. Aborting!")
         return
     highestbyte = os.path.getsize(file)  # The the file's size in bytes
-    blocksize = 63  # How many Bytes should be written in one batch
+    blocksize = 255  # How many Bytes should be written in one batch
     current_baseaddress = 0  # the address from which we start
     remainingbytes = highestbyte - current_baseaddress  # the bytes left to write
     byteswritten = 0  # the bytes written so far
@@ -243,92 +243,61 @@ def generateImage(pattern, times, file):
 
 
 # Main:
-print("EEPROM-Tool by derco0n. Version: 0.1 - 20200407")
-print("###############################################")
+print("EEPROM-Tool by derco0n. Version: 0.11 - 20200408")
+print("################################################")
 print("")
 
-parser = argparse.ArgumentParser(
-    description="""EEPROM-Tool is a utility to read and write 28C256 EEPROM 
+parser = argparse.ArgumentParser(prog="EEPROM",
+                                      description="""EEPROM-Tool is a utility to read and write 28C256 EEPROM 
     using a breadboard mounted Arduino and some shift registers. """)
-parser.add_argument('-d', '--dump', help="Dump EEPROMs contents to a file")
-parser.add_argument('-f', '--file', help="Full/path/to/file to read from / write to", required=True)
-parser.add_argument('-w', '--write', help="Write a ROM-Image to the EEPROM")
-parser.add_argument('-g', '--generate', help="generate an image file with a specific pattern")
-parser.add_argument('-p', '--pattern', help="the pattern that should be written to file")
-parser.add_argument('-t', '--times', help="how often should the pattern be written to a file")
+parser.add_argument('--mode', choices=('flash', 'dump', 'generate'),
+                    help='Flash a file to ROM, dump a ROM to file or generate a file',
+                    required = True)
+parser.add_argument('--file', help="Full/path/to/file to read from or write to", required=True)
 
 args = parser.parse_args()
+
 if len(sys.argv) == 1:
     parser.print_help()
-    exit(7)
-if args.dump is not None:
-    # Should dump a file
-    if args.file is None:
-        print("Please specify a file to which you want to write.")
-        parser.print_help()
-        exit(1)
-    # TODO: Dump contents to file specified
-    exit(10)  # DEBUG
-elif args.write is not None:
-    # Should write a file to the ROM
-    if args.file is None:
-        print("Please specify a file that should be written to the EEPROM.")
-        parser.print_help()
-        exit(2)
-    # TODO: Write contents from file specified
-    exit(10)  # DEBUG
-elif args.generate is not None:
+    exit(3)
+if args.mode == "generate":
     # Should generate a pattern in a file
-    if args.pattern is None:
-        print("Please specify a pattern.")
-        parser.print_help()
-        exit(3)
-    if args.times is None:
-        print("Please specify how often the pattern should be written.")
-        parser.print_help()
-        exit(4)
-    if args.file is None:
-        print("Please specify a file to which you want to write.")
-        parser.print_help()
-        exit(5)
-    # generate Pattern here
-    generateImage(bytes(args.pattern), int(args.times), args.file)
-# No options specified
-print("Wrong usage")
-parser.print_help()
-exit(6)
+    generateImage(b'\x00', MAX_ROMADDR, args.file)
+else:
+    # Should either do a flash or dump
+    try:
+        with serial.Serial(sport, baudrate=baud, timeout=t_o) as ser:
+            time.sleep(2)  # Wait a few seconds to intialize
+            if ser.isOpen():
+                print("Port \"" + ser.name + "\" opened.")
+                if args.mode == "dump":
+                    dumpEEPROM(MAX_ROMADDR, args.file, True)
+                elif args.mode == "flash":
+                    flashImage(args.file)
+    except serial.SerialException as e:
+        print("An error with the serial interface happened. => " + str(e))
+        print("Aborting!")
+        exit(2)
+    finally:
+        ser.close()
+        if not ser.isOpen:
+            print("Port \"" + ser.name + "\" Closed.")
+            exit(0)
+        else:
+            exit(1)
 
-try:
-    with serial.Serial(sport, baudrate=baud, timeout=t_o) as ser:
-        time.sleep(2)  # Wait a few seconds to intialize
-        if ser.isOpen():
-            print("Port \"" + ser.name + "\" opened.")
-            while True:
-                """
-                value = readAddress(b'\x0f\x43')  # test
-                # value = readBlock(b'\x0f\x40', 5)  # test
-                print(value)
-                dumpEEPROM(32767, "./28C256_dump.bin")
-                time.sleep(1)
-                """
-                break
-            # dumpEEPROM(MAX_ROMADDR, "../28C256_dump.bin", True)
-            # writeAddr(b'\x00\x00', b'\x00')
 
-            #writeBlock(b'\x00\x00', b'\xaa\xbb\xcc\xdd\xee\xff')
+"""
+Possible stuff we can do...
+# dumpEEPROM(MAX_ROMADDR, "../28C256_dump.bin", True)
+# writeAddr(b'\x00\x00', b'\x00')
 
-            #flashImage("../28C256_test.bin")
-            #dumpEEPROM(6400, "../28C256_test2.bin", True)
+#writeBlock(b'\x00\x00', b'\xaa\xbb\xcc\xdd\xee\xff')
 
-            #generateImage(b'\xea', MAX_ROMADDR, "../32K_6502_NOP.bin" )
-            #generateImage(b'\xff', MAX_ROMADDR, "../ROMS/32K_FF.bin")
-            #generateImage(b'\x00', MAX_ROMADDR, "../ROMS/32K_00.bin")
+#flashImage("../28C256_test.bin")
+#dumpEEPROM(6400, "../28C256_test2.bin", True)
 
-            ser.close()
-            if not ser.isOpen:
-                print("Port \"" + ser.name + "\" Closed.")
-                exit(0)
-except serial.SerialException as e:
-    print("An error with the serial interface happened. => " + str(e))
-    print("Aborting!")
-    exit(1)
+#generateImage(b'\xea', MAX_ROMADDR, "../32K_6502_NOP.bin" )
+#generateImage(b'\xff', MAX_ROMADDR, "../ROMS/32K_FF.bin")
+#generateImage(b'\x00', MAX_ROMADDR, "../ROMS/32K_00.bin")
+"""
