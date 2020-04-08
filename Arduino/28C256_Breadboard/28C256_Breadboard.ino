@@ -51,15 +51,14 @@ void testRead(){ //Can be used to test if reading data is working
   Serial.println("##############");
   int bs=BLOCK_SIZE;
   int maxrom=MAX_ROMADDR;  
-
-  /*
+  
   //DEBUG
   maxrom=256;
   char buf[200];
   sprintf(buf, "Iterating from 0 to %d", maxrom);
   Serial.println(buf);
   //DEBUG END
-  */
+  
   for (int base = 0; base < (maxrom-bs); base += bs) { //Fetch a bunch of bytes per line
     
     byte data[bs];
@@ -325,9 +324,9 @@ void clockLatch(){ //Makes one clock-pulse to Latch
 //int incomingByte = 0; // Für eingehende serielle Daten
 
 void receive(){
-  byte buf[68];  
+  byte buf[260];  
   //uint8_t pos = 0;  
-  int bytesavail=Serial.readBytes(buf, 68); //Reads a maximum of 64 Bytes into buffer and return the bytecount that was read
+  int bytesavail=Serial.readBytes(buf, 260); //Reads a maximum of 260 Bytes into buffer and return the bytecount that was read
   // Command-cases:
   if (bytesavail == 3 && buf[0] == '\x72' /*r*/ ){
      /*Should read a single address
