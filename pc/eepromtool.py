@@ -58,7 +58,7 @@ def writeAddr(address, data):
 
 
 def writeBlock(baseaddress, data):
-    """ Writes a block of max. 63 Bytes to the EEPROM """
+    """ Writes a block of max. 255 Bytes to the EEPROM """
     # print("Writing \"" + str(data) + "\" to EEPROM starting at address \"" + str(baseaddress) + "\"")  # DEBUG
     bytestosend = len(data)
     if bytestosend <= 255:
@@ -68,8 +68,8 @@ def writeBlock(baseaddress, data):
         # Write a block => [command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 63 Bytes)]
         msg = b'\x57' + baseaddress + data
         ser.write(msg)
-        while not receive == b'\x6F':  # Retry as long as the answer is not 0x6F indicating OK
-        #while receive == b'':  # Retry as long as the answer is not 0x6F indicating OK
+        #while not receive == b'\x6F':  # Retry as long as the answer is not 0x6F indicating OK
+        while receive == b'':  # Retry as long as no answer is received
             #receive = ser.read(68)  # DEBUG
             receive = ser.read(1)  # We await one byte here
             if retry == maxretries:
@@ -77,7 +77,7 @@ def writeBlock(baseaddress, data):
             else:
                 retry += 1
         return bytes(receive)
-    return b'\x6E'  # Error
+    return b'\x00'  # Error
 
 
 def readAddress(address):
@@ -132,21 +132,22 @@ def flashImage(file):
         while remainingbytes > 0:
             ba = int.to_bytes(current_baseaddress, 2, 'big', signed=False)  # Convert the base address to a byte value
             data = infile.read(blocksize)  # read data from file
-
-            if not writeBlock(ba, data) == b'\x6F':  # write a block of data bytes to the EEPROM
-                print("Error while writing data. Aborting!")  # abort if not 0x6F (OK) returned
+            bytessent = writeBlock(ba, data)
+            if bytessent == b'\x00':  # write a block of data bytes to the EEPROM
+                print("Error while writing data. Aborting!")  # abort if 0x00 returned
                 break
 
-            bytessent = blocksize
-            byteswritten += bytessent  # increment bytessent by blocksize
+            # bytessent = blocksize
+            bsent = int.from_bytes(bytessent, 'big', signed=False)
+            byteswritten += bsent  # increment bytessent by blocksize
             remainingbytes = highestbyte - byteswritten  # Bytes that are left to write
             if remainingbytes < blocksize:  # If there is not a whole block left ...
                 # ...adjust blocksize to match remainingbytes
                 # as blocksize indicate the highest address (index starts at zero) and remainingbytes tells use the
                 # remaining bytes (index starts a 1) we have to decrement 1
                 current_blocksize = remainingbytes - 1  # really -1?
-            # iterate base address to the next unread address
-            current_baseaddress += bytessent
+            # iterate base address to the next unwritten address
+            current_baseaddress += bsent
             # Update Progress Bar
             printProgressBar(byteswritten, highestbyte, prefix='Progress:', suffix='Complete', length=50)
             time.sleep(0.1)
@@ -274,17 +275,23 @@ else:
                     dumpEEPROM(MAX_ROMADDR, args.file, True)
                 elif args.mode == "flash":
                     flashImage(args.file)
+                print("Done")
     except serial.SerialException as e:
         print("An error with the serial interface happened. => " + str(e))
         print("Aborting!")
         exit(2)
+    except Exception as e:
+        print("An unexpected error occured. => " + str(e))
     finally:
-        ser.close()
-        if not ser.isOpen:
-            print("Port \"" + ser.name + "\" Closed.")
-            exit(0)
-        else:
-            exit(1)
+        if ser.isOpen():
+            print("Closing serial port...")
+            ser.close()
+            if not ser.isOpen:
+                print("Port \"" + ser.name + "\" Closed.")
+                exit(0)  # graceful exit
+            else:
+                exit(1)
+        exit(4)
 
 
 """

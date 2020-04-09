@@ -31,7 +31,7 @@
 
 #### Whole Block:
 ##### Request from PC:
-4-66 Bytes: [command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 63 Bytes)]
+4-66 Bytes: [command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 255 Bytes)]
 ##### Answer from Arduino
-[Return code (1-Byte)]
+[Count of bytes that had been written (1-Byte)]
 

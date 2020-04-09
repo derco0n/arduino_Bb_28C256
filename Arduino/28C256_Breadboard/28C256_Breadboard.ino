@@ -159,7 +159,7 @@ byte readEEPROM(int address){
 }
 
 
-bool writeEEPROMBlock(int address, byte *data, int len){
+int writeEEPROMBlock(int address, byte *data, int len){
     digitalWrite(WRITE_EN, HIGH);
 
    /*
@@ -177,7 +177,7 @@ bool writeEEPROMBlock(int address, byte *data, int len){
     int maxaddr=address+len;
     int counter=0;
   
-    while (address < maxaddr) {
+    while (address <= maxaddr) {
       writeEEPROM(address, data[counter]);
       /*
       setAddress(address, SR_INV, false); //Set the address where we want to write.
@@ -197,7 +197,7 @@ bool writeEEPROMBlock(int address, byte *data, int len){
         address++;
         counter++;
       }
-  return true;
+  return counter;
   }
 
 void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
@@ -240,7 +240,7 @@ void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
     digitalWrite(WRITE_EN, LOW);    
     delayMicroseconds(DELAY_US); //ROM-Datasheet says minimum Write-Pulse-Width = 100 µs but nothing about maximum. 1 Microsecond is the fastest arduino can do.
     digitalWrite(WRITE_EN, HIGH);
-    delay(10); //Give the ROM some time to stabilize
+    delay(15); //Give the ROM some time to stabilize
     
   }
 
@@ -382,13 +382,21 @@ void receive(){
       j++;
       }
    //send(databuf, i); //DEBUG.
+   /*
    if (writeEEPROMBlock(baseaddr, databuf, bytestowrite)){  //Write block and return ok if everything is fine
       buf[0] = '\x6F'; //Send OK back      
       }
    else {
       buf[0] = '\x6E'; //Send NOK back 
       }
-   
+   */
+   int byteswritten = writeEEPROMBlock(baseaddr, databuf, bytestowrite);
+   byte bwritten = 0x00;
+   if (byteswritten >=0 && byteswritten <= 255){  // value is between 0 and 255
+                bwritten = byteswritten & 0xFF; // AND the integer with 0xFF (all Ones in binary) to get the correct value
+        }
+   buf[0] = bwritten;
+
     send(buf, 1); //send the value...
     //send(buf, bytestowrite); //DEBUG.
     return;
