@@ -244,10 +244,9 @@ def generateImage(pattern, times, file):
 
 
 # Main:
-print("EEPROM-Tool by derco0n. Version: 0.11 - 20200408")
-print("################################################")
 print("")
-
+print("EEPROM-Tool by derco0n. Version: 0.12 - 20200409")
+print("################################################")
 parser = argparse.ArgumentParser(prog="EEPROM",
                                       description="""EEPROM-Tool is a utility to read and write 28C256 EEPROM 
     using a breadboard mounted Arduino and some shift registers. """)
