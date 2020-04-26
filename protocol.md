@@ -25,7 +25,7 @@
 
 ## Write:
 #### Single Address:
-##### Reques from PC
+##### Request from PC
 4 Bytes: [command (1-Byte)][Address (2-Bytes)][Value (1-Byte)]
 ### Answer from Arduino
 
@@ -34,4 +34,3 @@
 4-66 Bytes: [command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 255 Bytes)]
 ##### Answer from Arduino
 [Count of bytes that had been written (1-Byte)]
-
