@@ -1,4 +1,4 @@
-/*
+ /*
  * 
  * This Arduino-Based EEPROM-Writer is heavily inspired by the work of Ben Eater:
  * https://www.youtube.com/watch?v=K88pgWhEb1M
@@ -21,7 +21,7 @@
 
 
 const unsigned int MAX_PAYLOAD = 63;
-const unsigned int DELAY_US = 10;
+const unsigned int DELAY_US = 100;
 bool writemode=false; // indicates the state of the I/O_pins
 
 void setup() {
@@ -147,8 +147,14 @@ byte readEEPROM(int address){
         }
      writemode=false;   
     }
-  
-  setAddress(address, SR_INV, true); //Set-address
+
+  setAddress(address, SR_INV, true);
+  /*
+  if (!setAddress(address, SR_INV, true)) {//Set-address
+    //If address could not be set...
+    return 0x75; // ...Return error
+  }
+  */
   byte data = 0;
     
   for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin-=1) {
@@ -159,48 +165,29 @@ byte readEEPROM(int address){
 }
 
 
-int writeEEPROMBlock(int address, byte *data, int len){
-    digitalWrite(WRITE_EN, HIGH);
-
-   /*
-    * writeEEPROM will do this for us.
-  // This reduces the time to switch the data-pins between INPUT and OUTPUT
-   if (!writemode) { //We are in read mode at the moment and should set the data-pins as output      
-     for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
-        //Set all Data-Pins as Output
-        pinMode(pin, OUTPUT); 
-        }
-     writemode=true;   
-    }
+int writeEEPROMBlock(int address, byte *data, int len){    
+   /* 
+    *  This will write a block of bytes to the chip utilizing existing functions
     */    
-
-    int maxaddr=address+len;
-    int counter=0;
-  
-    while (address <= maxaddr) {
-      writeEEPROM(address, data[counter]);
-      /*
-      setAddress(address, SR_INV, false); //Set the address where we want to write.
-      for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
-          digitalWrite(pin, data[counter] & 1); //Writing out the right-most bit from our data-byte    
-          data[counter] = data[counter] >> 1; 
+    
+    digitalWrite(WRITE_EN, HIGH); //Set WRITE-EN to HIGH which disables writing    
+    int maxaddr=address+len;    
+    int cnt=0;
+    if (len < 255) { //If there a max. 254 Bytes to be written
+      for (cnt=0; cnt <= len; cnt++){
+          if (!writeEEPROM(address, data[cnt])){
+            break; //if the Byte could not be written, abort the loop as this indicates the maximum ROM-Size has beeen exceeded
           }
-        delayMicroseconds(DELAY_US);
-        
-        //All data Pins are set. We need to trigger Write enable to write our data to the EEPROM
-        digitalWrite(WRITE_EN, LOW);    
-        delayMicroseconds(DELAY_US); 
-        digitalWrite(WRITE_EN, HIGH);
-        delay(10);
-        //delayMicroseconds(DELAY_US); 
-     */
-        address++;
-        counter++;
+          else {
+            address++; //iterate by 1 as another byte is written
+          }
       }
-  return counter;
+    }        
+    delay(10);
+    return cnt; //Return the amount of bytes that had been written to the chip
   }
 
-void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
+bool writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
   digitalWrite(WRITE_EN, HIGH);
 
   // This reduces the time to switch the data-pins between INPUT and OUTPUT
@@ -212,7 +199,9 @@ void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
      writemode=true;   
     }
     
-  setAddress(address, SR_INV, /*Output enable*/ false); //Set the address to where we want to write.
+  if (!setAddress(address, SR_INV, /*Output enable*/ false)){ //Set the address to where we want to write.
+    return false; //Abort if address could not be set (address exceeds ROM-Size)
+  }
   
   for (int pin = EEPROM_D0; pin <= EEPROM_D7; pin++){
     digitalWrite(pin, data & 1); //Writing out the right-most bit from our data-byte
@@ -238,10 +227,11 @@ void writeEEPROM(int address, byte data){ //Writes a single byte to the EEPROM
     
     //All data Pins are set. We need to trigger Write enable to write our data to the EEPROM
     digitalWrite(WRITE_EN, LOW);    
-    delayMicroseconds(DELAY_US); //ROM-Datasheet says minimum Write-Pulse-Width = 100 µs but nothing about maximum. 1 Microsecond is the fastest arduino can do.
+    delayMicroseconds(DELAY_US); //ROM-Datasheet says minimum Write-Pulse-Width = 100 µs. 1 Microsecond is the fastest arduino can do.
     digitalWrite(WRITE_EN, HIGH);
     delay(15); //Give the ROM some time to stabilize
     
+    return true; //Byte had been written. OK
   }
 
 bool setAddress(int address, bool invert, bool outputEnable){ 
@@ -366,11 +356,11 @@ void receive(){
   else if (buf[0] == '\x57' && bytesavail >= 4 && bytesavail <= 258) // 'W'
     {
     /*  Should write a block
-     *[command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 63 Bytes)]
+     *[command (1-Byte)][Baseddress (2-Bytes)][Data to write (max. 255 Bytes)]
      */
      //convert addressbytes to an integer:    
     int baseaddr = (buf[1]<<8)+buf[2];
-    int bytestowrite = bytesavail - 4; //All bytes available - command and baseaddress
+    int bytestowrite = bytesavail - 3; //All bytes available - command and baseaddress
 
     int count = bytestowrite + 1;
     byte databuf[count];
@@ -390,11 +380,12 @@ void receive(){
       buf[0] = '\x6E'; //Send NOK back 
       }
    */
-   int byteswritten = writeEEPROMBlock(baseaddr, databuf, bytestowrite);
-   byte bwritten = 0x00;
-   if (byteswritten >=0 && byteswritten <= 255){  // value is between 0 and 255
-                bwritten = byteswritten & 0xFF; // AND the integer with 0xFF (all Ones in binary) to get the correct value
-        }
+   int byteswritten = 0x75;
+   byteswritten = writeEEPROMBlock(baseaddr, databuf, bytestowrite);
+   //byte bwritten = 0x00;
+   //if (byteswritten >=0 && byteswritten <= 255){  // value is between 0 and 255
+   byte bwritten = byteswritten & 0xFF; // AND the integer with 0xFF (all Ones in binary) to get the correct value
+   //     }
    buf[0] = bwritten;
 
     send(buf, 1); //send the value...

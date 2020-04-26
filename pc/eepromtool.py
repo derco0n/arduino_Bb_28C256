@@ -120,36 +120,55 @@ def flashImage(file):
         print("File \"" + file + "\" not found. Aborting!")
         return
     highestbyte = os.path.getsize(file)  # The the file's size in bytes
-    blocksize = 255  # How many Bytes should be written in one batch
+    blocksize = 254  # How many Bytes should be written in one batch.
+    """
+    Max. 254: as Arduino if Arduino would reply with 256 on a Byterange like 0-255
+    and there is just a one-byte field in the protocol with would then rollover to 0 causing an error
+    Arduino's answer should only be 0 if no byte had been written!
+    """
+    #blocksize = 7  # DEBUG
     current_baseaddress = 0  # the address from which we start
-    remainingbytes = highestbyte - current_baseaddress  # the bytes left to write
+    highestbyteindex = highestbyte - 1  # highest address to 0 statring index
+    remainingbytes = highestbyte - highestbyteindex  # the bytes left to write
     byteswritten = 0  # the bytes written so far
     if highestbyte < blocksize:  # blocksize must not be smaller than count of bytes to be written
         blocksize = remainingbytes  # adjust blocksize to match remainingbytes
     print("Writing Bytes 0 to " + str(highestbyte) + " from \"" + file + "\" to EEPROM.")
     with open(file, 'rb') as infile:  # Open file in read-binary-mode
-        printProgressBar(byteswritten, highestbyte, prefix='Progress:', suffix='Complete', length=50)
+        printProgressBar(byteswritten, highestbyteindex, prefix='Progress:', suffix='Complete', length=50)
         while remainingbytes > 0:
             ba = int.to_bytes(current_baseaddress, 2, 'big', signed=False)  # Convert the base address to a byte value
+            infile.seek(current_baseaddress, 0)  # move the file pointer to next byte relative to start of file
             data = infile.read(blocksize)  # read data from file
             bytessent = writeBlock(ba, data)
             if bytessent == b'\x00':  # write a block of data bytes to the EEPROM
-                print("Error while writing data. Aborting!")  # abort if 0x00 returned
+                print("Error while writing data. Aborting!")  # abort if 0x00 returned, zero bytes written
                 break
+            # DEBUG
+            if remainingbytes <= 512:
+                print("last bytes...")
+            # DEBUG END
 
             # bytessent = blocksize
-            bsent = int.from_bytes(bytessent, 'big', signed=False)
+            # Arduino increments by 1, as it must be able to indicate 0 bytes written. to correct the boundaries
+            # wee need to decrement the answer by 1
+            bsent = int.from_bytes(bytessent, 'big', signed=False) - 1
+            # DEBUG
+            if bsent < blocksize:
+                print("something strange happened")
+            #DEBUG END
+
             byteswritten += bsent  # increment bytessent by blocksize
-            remainingbytes = highestbyte - byteswritten  # Bytes that are left to write
+            remainingbytes = highestbyteindex - byteswritten  # Bytes that are left to write
             if remainingbytes < blocksize:  # If there is not a whole block left ...
                 # ...adjust blocksize to match remainingbytes
                 # as blocksize indicate the highest address (index starts at zero) and remainingbytes tells use the
                 # remaining bytes (index starts a 1) we have to decrement 1
-                current_blocksize = remainingbytes - 1  # really -1?
+                blocksize = remainingbytes
             # iterate base address to the next unwritten address
-            current_baseaddress += bsent
+            current_baseaddress += bsent  # + 1
             # Update Progress Bar
-            printProgressBar(byteswritten, highestbyte, prefix='Progress:', suffix='Complete', length=50)
+            printProgressBar(byteswritten, highestbyteindex, prefix='Progress:', suffix='Complete', length=50)
             time.sleep(0.1)
     infile.close()
     print("\r\nWriting \"" + file + "\" to EEPROM ended.")
@@ -231,13 +250,25 @@ def dumpEEPROM(highestbyte, file, deleteExisting=False):
     print("\r\nDumping to \"" + file + "\" ended.")
 
 
-def generateImage(pattern, times, file):
+def generateImage(pattern, times, file, incremental=False):
     """ Writes a given pattern to specific imagefile x times"""
     counter = 0
-    print("Writing pattern \"" + str(pattern) + "\" " + str(times) + " times to \"" + file + "\"")
+    inccounter = 0
+    if not incremental:
+        print("Writing pattern \"" + str(pattern) + "\" " + str(times) + " times to \"" + file + "\"")
+    else:
+        print("Writing incremental from \"" + str(pattern) + "\" " + str(times) + " to \"" + file + "\"")
     with open(file, 'wb') as outfile:  # Open file in binary-write-mode
         while counter <= times:
-            outfile.write(pattern)
+            if not incremental:
+                outfile.write(pattern)
+            else:
+                val = int.from_bytes(pattern, 'big', signed=False) + inccounter
+                pat = int.to_bytes(val, 1, 'big', signed=False)
+                outfile.write(pat)
+                inccounter += 1
+                if inccounter > 255:
+                    inccounter = 0
             printProgressBar(counter, times, prefix='Progress:', suffix='Complete', length=50)
             counter += 1
     outfile.close()
@@ -245,7 +276,7 @@ def generateImage(pattern, times, file):
 
 # Main:
 print("")
-print("EEPROM-Tool by derco0n. Version: 0.12 - 20200409")
+print("EEPROM-Tool by derco0n. Version: 0.15 - 20200426")
 print("################################################")
 parser = argparse.ArgumentParser(prog="EEPROM",
                                       description="""EEPROM-Tool is a utility to read and write 28C256 EEPROM 
@@ -262,7 +293,8 @@ if len(sys.argv) == 1:
     exit(3)
 if args.mode == "generate":
     # Should generate a pattern in a file
-    generateImage(b'\x00', MAX_ROMADDR, args.file)
+    generateImage(b'\x00', MAX_ROMADDR, args.file, True)
+    #generateImage(b'\x00', MAX_ROMADDR, args.file)
 else:
     # Should either do a flash or dump
     try:
